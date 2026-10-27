@@ -161,4 +161,236 @@
   <script>
     // --- EMAILJS CONFIGURATION ---
     const EMAILJS_PUBLIC_KEY = "puwNNWhFY_Bn07wU6";
-    const EMAILJS_SERVICE_ID =
+    const EMAILJS_SERVICE_ID = "service_fqd23dt";
+    const EMAILJS_TEMPLATE_ID = "template_gzhcw2w";
+
+    emailjs.init(EMAILJS_PUBLIC_KEY);
+
+    function sendNotification(action, name, date, slot) {
+      const templateParams = {
+        action: action,
+        user_name: name,
+        booking_date: date,
+        booking_slot: slot
+      };
+
+      emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams)
+        .then(() => console.log('Notification email sent successfully!'))
+        .catch(err => console.error('Failed to send email:', err));
+    }
+
+    const MAX_CAPACITY = 5;
+    const SLOTS = ["14:00", "15:00", "16:00", "17:00", "18:00", "19:00"];
+
+    // --- 1. DATE SPECIFICHE BLOCCATE (YYYY-MM-DD) ---
+    const BLOCKED_DATES = [
+      "2026-12-25",
+      "2027-01-01"
+    ];
+
+    // --- 2. DATE EXTRA ABILITATE / NATALIZIE (YYYY-MM-DD) ---
+    const EXTRA_DATES = [
+      "2026-12-23",
+      "2026-12-24",
+      "2026-12-26",
+      "2026-12-28",
+      "2026-12-29",
+      "2026-12-30",
+      "2027-01-02",
+      "2027-01-04",
+      "2027-01-05",
+      "2027-01-06"
+    ];
+
+    // --- 3. ORARI SPECIFICI BLOCCATE PER DATA (YYYY-MM-DD: ["HH:MM"]) ---
+    const BLOCKED_SLOTS = {
+      "2026-10-31": ["14:00"] // Esempio: Sabato 31 Ottobre lo slot delle 14:00 e' bloccato
+    };
+
+    let selectedDateStr = "";
+
+    function formatDate(dateObj) {
+      const year = dateObj.getFullYear();
+      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const day = String(dateObj.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    function getAvailableDays() {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const currentDay = today.getDay();
+
+      let daysUntilSaturday = (6 - currentDay + 7) % 7;
+      if (currentDay === 0) daysUntilSaturday = 6;
+
+      const saturday = new Date(today);
+      saturday.setDate(today.getDate() + daysUntilSaturday);
+
+      const sunday = new Date(saturday);
+      sunday.setDate(saturday.getDate() + 1);
+
+      const daysMap = new Map();
+
+      daysMap.set(formatDate(saturday), saturday);
+      daysMap.set(formatDate(sunday), sunday);
+
+      for (let i = 0; i < 7; i++) {
+        const checkDate = new Date(today);
+        checkDate.setDate(today.getDate() + i);
+        const dateStr = formatDate(checkDate);
+
+        if (EXTRA_DATES.includes(dateStr)) {
+          daysMap.set(dateStr, checkDate);
+        }
+      }
+
+      return Array.from(daysMap.values()).sort((a, b) => a - b);
+    }
+
+    function renderDaysSelector() {
+      const container = document.getElementById('days-container');
+      container.innerHTML = '';
+
+      const availableDays = getAvailableDays();
+      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+      selectedDateStr = "";
+      for (let dateObj of availableDays) {
+        const dStr = formatDate(dateObj);
+        if (!BLOCKED_DATES.includes(dStr)) {
+          selectedDateStr = dStr;
+          break;
+        }
+      }
+
+      availableDays.forEach((dateObj) => {
+        const dateStr = formatDate(dateObj);
+        const isBlocked = BLOCKED_DATES.includes(dateStr);
+        const displayDayName = dayNames[dateObj.getDay()];
+        const displayDate = `${dateObj.getDate()} ${monthNames[dateObj.getMonth()]}`;
+
+        const btn = document.createElement('button');
+        const isSelected = dateStr === selectedDateStr;
+        btn.className = 'day-btn' + (isSelected ? ' selected' : '');
+
+        if (isBlocked) {
+          btn.disabled = true;
+        }
+
+        btn.innerHTML = `
+          <span class="day-label">${displayDayName} ${isBlocked ? '(Unavailable)' : ''}</span>
+          <span class="day-date">${displayDate}</span>
+        `;
+
+        if (!isBlocked) {
+          btn.onclick = () => {
+            document.querySelectorAll('.day-btn').forEach(b => b.classList.remove('selected'));
+            btn.classList.add('selected');
+            selectedDateStr = dateStr;
+            renderSlots();
+          };
+        }
+
+        container.appendChild(btn);
+      });
+
+      renderSlots();
+    }
+
+    function getBookings() {
+      const stored = localStorage.getItem('cervinia_bookings_v3');
+      return stored ? JSON.parse(stored) : {};
+    }
+
+    function saveBookings(allBookings) {
+      localStorage.setItem('cervinia_bookings_v3', JSON.stringify(allBookings));
+      renderSlots();
+    }
+
+    function addBooking(slot, inputId) {
+      const input = document.getElementById(inputId);
+      const name = input.value.trim();
+      if (!name || !selectedDateStr) return;
+
+      const allBookings = getBookings();
+      if (!allBookings[selectedDateStr]) allBookings[selectedDateStr] = {};
+      if (!allBookings[selectedDateStr][slot]) allBookings[selectedDateStr][slot] = [];
+
+      if (allBookings[selectedDateStr][slot].length < MAX_CAPACITY) {
+        allBookings[selectedDateStr][slot].push(name);
+        saveBookings(allBookings);
+        
+        sendNotification("NUOVA PRENOTAZIONE", name, selectedDateStr, slot);
+        
+        input.value = '';
+      }
+    }
+
+    function removeBooking(slot, index) {
+      const allBookings = getBookings();
+      if (allBookings[selectedDateStr] && allBookings[selectedDateStr][slot]) {
+        const removedName = allBookings[selectedDateStr][slot][index];
+        allBookings[selectedDateStr][slot].splice(index, 1);
+        saveBookings(allBookings);
+
+        sendNotification("CANCELLAZIONE", removedName, selectedDateStr, slot);
+      }
+    }
+
+    function renderSlots() {
+      const container = document.getElementById('slots-container');
+      container.innerHTML = '';
+
+      if (!selectedDateStr) {
+        container.innerHTML = '<div style="text-align:center; color:#94a3b8; padding:20px;">No sessions available for the selected period.</div>';
+        return;
+      }
+
+      const allBookings = getBookings();
+      const dateBookings = allBookings[selectedDateStr] || {};
+      const blockedSlotsForDate = BLOCKED_SLOTS[selectedDateStr] || [];
+
+      SLOTS.forEach((slot, index) => {
+        const list = dateBookings[slot] || [];
+        const isSlotBlocked = blockedSlotsForDate.includes(slot);
+        const isFull = isSlotBlocked || (list.length >= MAX_CAPACITY);
+        const available = MAX_CAPACITY - list.length;
+        const inputId = `input-${index}`;
+
+        const card = document.createElement('div');
+        card.className = 'slot-card';
+        card.innerHTML = `
+          <div class="slot-header">
+            <span class="time">${slot}</span>
+            <span class="badge ${isFull ? 'full' : ''}">
+              ${isSlotBlocked ? 'Not Available' : (isFull ? 'Fully Booked' : `${available} spots available`)}
+            </span>
+          </div>
+
+          <div class="form-group">
+            <input type="text" id="${inputId}" placeholder="${isSlotBlocked ? 'Session unavailable' : 'Enter your name'}" ${isFull ? 'disabled' : ''}>
+            <button class="btn-submit" onclick="addBooking('${slot}', '${inputId}')" ${isFull ? 'disabled' : ''}>Book</button>
+          </div>
+
+          <ul class="attendees-list">
+            ${list.map((name, i) => `
+              <li class="attendee-item">
+                <span>👤 ${name}</span>
+                <button class="btn-cancel" onclick="removeBooking('${slot}', ${i})">Cancel</button>
+              </li>
+            `).join('')}
+          </ul>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      renderDaysSelector();
+    });
+  </script>
+</body>
+</html>
