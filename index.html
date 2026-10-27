@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Workout Cervinia - Booking</title>
+  
+  <!-- EmailJS SDK -->
+  <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+  
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --accent: #0284c7;
+      --accent-hover: #0369a1;
+      --danger: #ef4444;
+      --text: #f8fafc;
+      --subtext: #94a3b8;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+    body { background-color: var(--bg); color: var(--text); padding: 20px 15px; min-height: 100vh; }
+    
+    header { text-align: center; margin-bottom: 20px; }
+    header h1 { font-size: 1.8rem; margin-bottom: 8px; color: #fff; }
+    header p { color: var(--subtext); font-size: 0.95rem; }
+
+    .container { max-width: 500px; margin: 0 auto; display: grid; gap: 15px; }
+
+    .step-card {
+      background-color: var(--card-bg);
+      border-radius: 12px;
+      padding: 16px;
+      border: 1px solid #334155;
+    }
+
+    .step-title {
+      font-size: 1.05rem;
+      font-weight: bold;
+      margin-bottom: 12px;
+      color: #38bdf8;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .days-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 12px;
+    }
+
+    .day-btn {
+      padding: 14px 10px;
+      background: #0f172a;
+      border: 1px solid #475569;
+      color: white;
+      border-radius: 8px;
+      font-weight: bold;
+      cursor: pointer;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .day-btn .day-label { font-size: 1.05rem; color: #38bdf8; }
+    .day-btn .day-date { font-size: 0.85rem; color: var(--subtext); }
+
+    .day-btn:hover:not(:disabled) { background: #334155; }
+    .day-btn.selected { background: var(--accent); border-color: var(--accent); }
+    .day-btn.selected .day-label, .day-btn.selected .day-date { color: #fff; }
+    
+    .day-btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+      border-color: transparent;
+    }
+
+    .slot-card {
+      background-color: var(--card-bg);
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+
+    .slot-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      border-bottom: 1px solid #334155;
+      padding-bottom: 8px;
+    }
+
+    .time { font-size: 1.2rem; font-weight: bold; }
+    .badge { background: #334155; padding: 4px 10px; border-radius: 20px; font-size: 0.8rem; }
+    .badge.full { background: #991b1b; color: #fecaca; }
+
+    .form-group { display: flex; gap: 8px; margin-bottom: 12px; }
+    input[type="text"] {
+      flex: 1;
+      padding: 10px;
+      border-radius: 6px;
+      border: 1px solid #475569;
+      background: #0f172a;
+      color: #fff;
+      font-size: 0.95rem;
+    }
+    input[type="text"]:focus { outline: 2px solid var(--accent); }
+
+    .btn-submit {
+      padding: 10px 14px;
+      border-radius: 6px;
+      border: none;
+      background-color: var(--accent);
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-submit:hover { background-color: var(--accent-hover); }
+    .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .attendees-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+    .attendee-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #0f172a;
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 0.9rem;
+    }
+    .btn-cancel {
+      background: transparent;
+      color: var(--danger);
+      padding: 2px 6px;
+      font-size: 0.8rem;
+      border: none;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Workout Cervinia 🏔️</h1>
+    <p>Select day and time slot for upcoming workout sessions.</p>
+  </header>
+
+  <div class="container">
+    <div class="step-card">
+      <div class="step-title">Select Available Day</div>
+      <div id="days-container" class="days-grid"></div>
+    </div>
+
+    <div id="slots-container"></div>
+  </div>
+
+  <script>
+    // --- EMAILJS CONFIGURATION ---
+    const EMAILJS_PUBLIC_KEY = "puwNNWhFY_Bn07wU6";
+    const EMAILJS_SERVICE_ID = "service_fqd23dt";
+    const EMAILJS_TEMPLATE_ID = "template_gzhcw2w";
+
+    emailjs.init(EMAILJS_PUBLIC_KEY);
+
+    function sendNotification(action, name, date, slot) {
+      const templateParams = {
+        action: action,
+        user_name: name,
+        booking_date: date,
+        booking_slot: slot
+      };
+
+      emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams)
+        .then(() => console.log('Notification email sent successfully!'))
+        .catch(err => console.error('Failed to send email:', err));
+    }
+
+    const MAX_CAPACITY = 5;
+    const SLOTS = ["14:00", "15:00", "16:00", "17:00", "18:00", "19:00"];
+
+    // --- 1. DATE SPECIFICHE BLOCCATE (YYYY-MM-DD) ---
+    const BLOCKED_DATES = [
+      "2026-12-25",
+      "2027-01-01"
+    ];
+
+    // --- 2. DATE EXTRA ABILITATE / NATALIZIE (YYYY-MM-DD) ---
+    const EXTRA_DATES = [
+      "2026-12-23",
+      "2026-12-24",
+      "2026-12-26",
+      "2026-12-28",
+      "2026-12-29",
+      "2026-12-30",
+      "2027-01-02",
+      "2027-01-04",
+      "2027-01-05",
+      "2027-01-06"
+    ];
+
+    let selectedDateStr = "";
+
+    function formatDate(dateObj) {
+      const year = dateObj.getFullYear();
+      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const day = String(dateObj.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    function getAvailableDays() {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const currentDay = today.getDay();
+
+      let daysUntilSaturday = (6 - currentDay + 7) % 7;
+      if (currentDay === 0) daysUntilSaturday = 6;
+
+      const saturday = new Date(today);
+      saturday.setDate(today.getDate() + daysUntilSaturday);
+
+      const sunday = new Date(saturday);
+      sunday.setDate(saturday.getDate() + 1);
+
+      const daysMap = new Map();
+
+      daysMap.set(formatDate(saturday), saturday);
+      daysMap.set(formatDate(sunday), sunday);
+
+      for (let i = 0; i < 7; i++) {
+        const checkDate = new Date(today);
+        checkDate.setDate(today.getDate() + i);
+        const dateStr = formatDate(checkDate);
+
+        if (EXTRA_DATES.includes(dateStr)) {
+          daysMap.set(dateStr, checkDate);
+        }
+      }
+
+      return Array.from(daysMap.values()).sort((a, b) => a - b);
+    }
+
+    function renderDaysSelector() {
+      const container = document.getElementById('days-container');
+      container.innerHTML = '';
+
+      const availableDays = getAvailableDays();
+      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+      selectedDateStr = "";
+      for (let dateObj of availableDays) {
+        const dStr = formatDate(dateObj);
+        if (!BLOCKED_DATES.includes(dStr)) {
+          selectedDateStr = dStr;
+          break;
+        }
+      }
+
+      availableDays.forEach((dateObj) => {
+        const dateStr = formatDate(dateObj);
+        const isBlocked = BLOCKED_DATES.includes(dateStr);
+        const displayDayName = dayNames[dateObj.getDay()];
+        const displayDate = `${dateObj.getDate()} ${monthNames[dateObj.getMonth()]}`;
+
+        const btn = document.createElement('button');
+        const isSelected = dateStr === selectedDateStr;
+        btn.className = 'day-btn' + (isSelected ? ' selected' : '');
+
+        if (isBlocked) {
+          btn.disabled = true;
+        }
+
+        btn.innerHTML = `
+          <span class="day-label">${displayDayName} ${isBlocked ? '(Unavailable)' : ''}</span>
+          <span class="day-date">${displayDate}</span>
+        `;
+
+        if (!isBlocked) {
+          btn.onclick = () => {
+            document.querySelectorAll('.day-btn').forEach(b => b.classList.remove('selected'));
+            btn.classList.add('selected');
+            selectedDateStr = dateStr;
+            renderSlots();
+          };
+        }
+
+        container.appendChild(btn);
+      });
+
+      renderSlots();
+    }
+
+    function getBookings() {
+      const stored = localStorage.getItem('cervinia_bookings_v3');
+      return stored ? JSON.parse(stored) : {};
+    }
+
+    function saveBookings(allBookings) {
+      localStorage.setItem('cervinia_bookings_v3', JSON.stringify(allBookings));
+      renderSlots();
+    }
+
+    function addBooking(slot, inputId) {
+      const input = document.getElementById(inputId);
+      const name = input.value.trim();
+      if (!name || !selectedDateStr) return;
+
+      const allBookings = getBookings();
+      if (!allBookings[selectedDateStr]) allBookings[selectedDateStr] = {};
+      if (!allBookings[selectedDateStr][slot]) allBookings[selectedDateStr][slot] = [];
+
+      if (allBookings[selectedDateStr][slot].length < MAX_CAPACITY) {
+        allBookings[selectedDateStr][slot].push(name);
+        saveBookings(allBookings);
+        
+        sendNotification("NUOVA PRENOTAZIONE", name, selectedDateStr, slot);
+        
+        input.value = '';
+      }
+    }
+
+    function removeBooking(slot, index) {
+      const allBookings = getBookings();
+      if (allBookings[selectedDateStr] && allBookings[selectedDateStr][slot]) {
+        const removedName = allBookings[selectedDateStr][slot][index];
+        allBookings[selectedDateStr][slot].splice(index, 1);
+        saveBookings(allBookings);
+
+        sendNotification("CANCELLAZIONE", removedName, selectedDateStr, slot);
+      }
+    }
+
+    function renderSlots() {
+      const container = document.getElementById('slots-container');
+      container.innerHTML = '';
+
+      if (!selectedDateStr) {
+        container.innerHTML = '<div style="text-align:center; color:#94a3b8; padding:20px;">No sessions available for the selected period.</div>';
+        return;
+      }
+
+      const allBookings = getBookings();
+      const dateBookings = allBookings[selectedDateStr] || {};
+
+      SLOTS.forEach((slot, index) => {
+        const list = dateBookings[slot] || [];
+        const isFull = list.length >= MAX_CAPACITY;
+        const available = MAX_CAPACITY - list.length;
+        const inputId = `input-${index}`;
+
+        const card = document.createElement('div');
+        card.className = 'slot-card';
+        card.innerHTML = `
+          <div class="slot-header">
+            <span class="time">${slot}</span>
+            <span class="badge ${isFull ? 'full' : ''}">
+              ${isFull ? 'Fully Booked' : `${available} spots available`}
+            </span>
+          </div>
+
+          <div class="form-group">
+            <input type="text" id="${inputId}" placeholder="Enter your name" ${isFull ? 'disabled' : ''}>
+            <button class="btn-submit" onclick="addBooking('${slot}', '${inputId}')" ${isFull ? 'disabled' : ''}>Book</button>
+          </div>
+
+          <ul class="attendees-list">
+            ${list.map((name, i) => `
+              <li class="attendee-item">
+                <span>👤 ${name}</span>
+                <button class="btn-cancel" onclick="removeBooking('${slot}', ${i})">Cancel</button>
+              </li>
+            `).join('')}
+          </ul>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      renderDaysSelector();
+    });
+  </script>
+</body>
+</html>
