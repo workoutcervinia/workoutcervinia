@@ -216,33 +216,26 @@
     }
 
     function getAvailableDays() {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
-      const currentDay = today.getDay();
+  // Consideriamo la settimana a partire dal Lunedì:
+  // getDay() restituisce 0 per Domenica, 1 per Lunedì, ..., 6 per Sabato.
+  // Con questo calcolo: Lunedì = 0, Martedì = 1, ..., Sabato = 5, Domenica = 6.
+  const currentDayOfWeek = (today.getDay() + 6) % 7;
 
-      let daysUntilSaturday = (6 - currentDay + 7) % 7;
-      if (currentDay === 0) daysUntilSaturday = 6;
+  // Calcola quanti giorni mancano al Sabato successivo (indice 5)
+  const daysUntilSaturday = 5 - currentDayOfWeek + (currentDayOfWeek > 5 ? 7 : 0);
 
-      const saturday = new Date(today);
-      saturday.setDate(today.getDate() + daysUntilSaturday);
+  const saturday = new Date(today);
+  saturday.setDate(today.getDate() + daysUntilSaturday);
 
-      const sunday = new Date(saturday);
-      sunday.setDate(saturday.getDate() + 1);
+  const sunday = new Date(saturday);
+  sunday.setDate(saturday.getDate() + 1);
 
-      const daysMap = new Map();
+  return [saturday, sunday];
+}
 
-      daysMap.set(formatDate(saturday), saturday);
-      daysMap.set(formatDate(sunday), sunday);
-
-      for (let i = 0; i < 7; i++) {
-        const checkDate = new Date(today);
-        checkDate.setDate(today.getDate() + i);
-        const dateStr = formatDate(checkDate);
-
-        if (EXTRA_DATES.includes(dateStr)) {
-          daysMap.set(dateStr, checkDate);
-        }
       }
 
       return Array.from(daysMap.values()).sort((a, b) => a - b);
