@@ -140,6 +140,12 @@
       border: none;
       cursor: pointer;
     }
+    .loading-text {
+      text-align: center;
+      color: var(--subtext);
+      padding: 20px;
+      font-size: 0.95rem;
+    }
   </style>
 </head>
 <body>
@@ -155,10 +161,16 @@
       <div id="days-container" class="days-grid"></div>
     </div>
 
-    <div id="slots-container"></div>
+    <div id="slots-container">
+      <div class="loading-text">Loading live availability...</div>
+    </div>
   </div>
 
   <script>
+    // --- FIREBASE DATABASE URL ---
+    // INCOLLA QUI L'URL DEL TUO REALTIME DATABASE (es. https://workout-cervinia-default-rtdb.europe-west1.firebasedatabase.app)
+    const FIREBASE_DB_URL = "https://workout-cervinia-default-rtdb.europe-west1.firebasedatabase.app";
+
     // --- EMAILJS CONFIGURATION ---
     const EMAILJS_PUBLIC_KEY = "puwNNWhFY_Bn07wU6";
     const EMAILJS_SERVICE_ID = "service_fqd23dt";
@@ -204,10 +216,11 @@
 
     // --- 3. ORARI SPECIFICI BLOCCATI PER DATA (YYYY-MM-DD: ["HH:MM"]) ---
     const BLOCKED_SLOTS = {
-      "2026-11-08": ["14:00","19:00"]
+      // Esempio: "2026-11-14": ["14:00"]
     };
 
     let selectedDateStr = "";
+    let cachedBookings = {};
 
     function formatDate(dateObj) {
       const year = dateObj.getFullYear();
@@ -220,28 +233,24 @@
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      const currentDay = today.getDay(); // 0: Domenica, 1: Lunedì, ..., 6: Sabato
+      const currentDay = today.getDay();
 
       let saturday = new Date(today);
       let sunday = new Date(today);
 
       if (currentDay === 0) {
-        // Se oggi è Domenica: mostra il Sabato appena passato e la Domenica odierna
         saturday.setDate(today.getDate() - 1);
         sunday = new Date(today);
       } else {
-        // Da Lunedì a Sabato: calcola il Sabato e la Domenica della settimana corrente/imminente
         const daysUntilSaturday = 6 - currentDay;
         saturday.setDate(today.getDate() + daysUntilSaturday);
         sunday.setDate(saturday.getDate() + 1);
       }
 
       const daysMap = new Map();
-
       daysMap.set(formatDate(saturday), saturday);
       daysMap.set(formatDate(sunday), sunday);
 
-      // Aggiungi eventuali date EXTRA_DATES nei prossimi 7 giorni da oggi
       for (let i = 0; i < 7; i++) {
         const checkDate = new Date(today);
         checkDate.setDate(today.getDate() + i);
@@ -253,6 +262,30 @@
       }
 
       return Array.from(daysMap.values()).sort((a, b) => a - b);
+    }
+
+    async function fetchBookingsFromFirebase() {
+      try {
+        const response = await fetch(`${FIREBASE_DB_URL}/bookings.json`);
+        const data = await response.json();
+        cachedBookings = data || {};
+      } catch (error) {
+        console.error("Error fetching bookings:", error);
+      }
+      renderSlots();
+    }
+
+    async function saveDateSlotToFirebase(dateStr, slot, list) {
+      try {
+        await fetch(`${FIREBASE_DB_URL}/bookings/${dateStr}/${slot}.json`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(list)
+        });
+      } catch (error) {
+        console.error("Error saving booking:", error);
+        alert("Connection error while saving. Please try again.");
+      }
     }
 
     function renderDaysSelector() {
@@ -303,46 +336,58 @@
         container.appendChild(btn);
       });
 
-      renderSlots();
+      fetchBookingsFromFirebase();
     }
 
-    function getBookings() {
-      const stored = localStorage.getItem('cervinia_bookings_v3');
-      return stored ? JSON.parse(stored) : {};
-    }
-
-    function saveBookings(allBookings) {
-      localStorage.setItem('cervinia_bookings_v3', JSON.stringify(allBookings));
-      renderSlots();
-    }
-
-    function addBooking(slot, inputId) {
+    async function addBooking(slot, inputId) {
       const input = document.getElementById(inputId);
       const name = input.value.trim();
       if (!name || !selectedDateStr) return;
 
-      const allBookings = getBookings();
-      if (!allBookings[selectedDateStr]) allBookings[selectedDateStr] = {};
-      if (!allBookings[selectedDateStr][slot]) allBookings[selectedDateStr][slot] = [];
+      input.disabled = true;
 
-      if (allBookings[selectedDateStr][slot].length < MAX_CAPACITY) {
-        allBookings[selectedDateStr][slot].push(name);
-        saveBookings(allBookings);
+      // Ricarica i dati aggiornati prima di scrivere per evitare sovrascritture simultanee
+      await fetchBookingsFromFirebase();
+
+      if (!cachedBookings[selectedDateStr]) cachedBookings[selectedDateStr] = {};
+      if (!cachedBookings[selectedDateStr][slot]) cachedBookings[selectedDateStr][slot] = [];
+
+      const currentList = Array.isArray(cachedBookings[selectedDateStr][slot])
+        ? cachedBookings[selectedDateStr][slot]
+        : Object.values(cachedBookings[selectedDateStr][slot]);
+
+      if (currentList.length < MAX_CAPACITY) {
+        currentList.push(name);
+        cachedBookings[selectedDateStr][slot] = currentList;
         
+        await saveDateSlotToFirebase(selectedDateStr, slot, currentList);
         sendNotification("NUOVA PRENOTAZIONE", name, selectedDateStr, slot);
         
         input.value = '';
+        renderSlots();
+      } else {
+        alert("Sorry, this slot just filled up!");
+        renderSlots();
       }
     }
 
-    function removeBooking(slot, index) {
-      const allBookings = getBookings();
-      if (allBookings[selectedDateStr] && allBookings[selectedDateStr][slot]) {
-        const removedName = allBookings[selectedDateStr][slot][index];
-        allBookings[selectedDateStr][slot].splice(index, 1);
-        saveBookings(allBookings);
+    async function removeBooking(slot, index) {
+      await fetchBookingsFromFirebase();
 
+      if (cachedBookings[selectedDateStr] && cachedBookings[selectedDateStr][slot]) {
+        const currentList = Array.isArray(cachedBookings[selectedDateStr][slot])
+          ? cachedBookings[selectedDateStr][slot]
+          : Object.values(cachedBookings[selectedDateStr][slot]);
+
+        const removedName = currentList[index];
+        if (!removedName) return;
+
+        currentList.splice(index, 1);
+        cachedBookings[selectedDateStr][slot] = currentList;
+
+        await saveDateSlotToFirebase(selectedDateStr, slot, currentList);
         sendNotification("CANCELLAZIONE", removedName, selectedDateStr, slot);
+        renderSlots();
       }
     }
 
@@ -351,16 +396,17 @@
       container.innerHTML = '';
 
       if (!selectedDateStr) {
-        container.innerHTML = '<div style="text-align:center; color:#94a3b8; padding:20px;">No sessions available for the selected period.</div>';
+        container.innerHTML = '<div class="loading-text">No sessions available for the selected period.</div>';
         return;
       }
 
-      const allBookings = getBookings();
-      const dateBookings = allBookings[selectedDateStr] || {};
+      const dateBookings = cachedBookings[selectedDateStr] || {};
       const blockedSlotsForDate = BLOCKED_SLOTS[selectedDateStr] || [];
 
       SLOTS.forEach((slot, index) => {
-        const list = dateBookings[slot] || [];
+        const rawList = dateBookings[slot] || [];
+        const list = Array.isArray(rawList) ? rawList : Object.values(rawList);
+        
         const isSlotBlocked = blockedSlotsForDate.includes(slot);
         const isFull = isSlotBlocked || (list.length >= MAX_CAPACITY);
         const available = MAX_CAPACITY - list.length;
